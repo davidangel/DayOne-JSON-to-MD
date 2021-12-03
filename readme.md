@@ -14,4 +14,4 @@ Based on [ze-kel's efforts](https://github.com/ze-kel/DayOne-JSON-to-MD) to expo
 
 ----------
 
-**Note**: Video files that use `.mov` are not currently embeddable in Obsidian, but Obsidian will open the default video player when these links are clicked.
+**Note**: Video files that use `.mov` are not currently embeddable in Obsidian, but Obsidian will open the default video player when these links are clicked. I wonder if this code could be extended to use `ffmpeg` to convert those videos... :-)
