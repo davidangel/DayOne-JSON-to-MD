@@ -159,8 +159,8 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
         yamlString = "---\n"+"title: "+title+"\n"
         yamlString += "date: " + datetime.strptime(entry['creationDate'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone).strftime('%Y-%m-%d %H:%M:%S') + "\n"
         if writetags:
-            yamlString+="---\n"
-            yamlString+="tags:\n- #"+ "\n- #".join(filteredtags) + "\n"
+            # add metadata for tags
+            yamlString+="tags:\n- "+ "\n- ".join(filteredtags) + "\n"
         yamlString+="---\n\n"
 
         # newfilename = date +" — " + title + ".md"
