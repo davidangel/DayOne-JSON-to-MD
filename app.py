@@ -10,7 +10,7 @@ from pytz import timezone
 from datetime import datetime
 
 
-# If you use Obsidian.md you don't have to specifically point to media file as long as they are somewhere in "embedded media" folder. 
+# If you use Obsidian.md you don't have to specifically point to media file as long as they are somewhere in "embedded media" folder.
 # If true link will be ![[file]] else ![](/folder/file)
 relativeMediaLinking = False
 
@@ -134,11 +134,12 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
             if relativeMediaLinking:
                 text = text.replace(moment, f"![[{newName}.{momentFormat}]]")
             else:
+                newName = newName.replace(' ','%20')
                 text = text.replace(moment, f"![](/{folder}/{newName}.{momentFormat})")
             
         rawtags = entry.get('tags')
+        location = entry.get('location')
         
-        writetags = False
         if rawtags:
             # We only need to append tags that aren't set in text
             filteredtags = []
@@ -146,11 +147,7 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
                 if "#"+ tag not in text:
                     filteredtags.append(tag.replace(" ", ""))
                 else:
-                    print('This tag was in text: ',tag)
-
-            if len(filteredtags)>0:
-                tagsString = "#" + " #".join(filteredtags) + "\n"
-                writetags = True
+                    print('This tag was ignored as it was in text: ',tag)
 
         text = cleanup(text)
         title = cleanup(title)
@@ -158,9 +155,14 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
 
         yamlString = "---\n"+"title: "+title+"\n"
         yamlString += "date: " + datetime.strptime(entry['creationDate'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone).strftime('%Y-%m-%d %H:%M:%S') + "\n"
-        if writetags:
+        if len(filteredtags)>0:
             # add metadata for tags
             yamlString+="tags:\n- "+ "\n- ".join(filteredtags) + "\n"
+
+        if location:
+            yamlString += "latitude: " + str(location['latitude']) + "\n"
+            yamlString += "longitude: " + str(location['longitude']) + "\n"
+
         yamlString+="---\n\n"
 
         # newfilename = date +" — " + title + ".md"
