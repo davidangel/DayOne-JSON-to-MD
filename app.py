@@ -8,6 +8,7 @@ import shutil
 import sys
 from pytz import timezone
 from datetime import datetime
+from collections.abc import Iterable
 
 
 # If you use Obsidian.md you don't have to specifically point to media file as long as they are somewhere in "embedded media" folder.
@@ -18,7 +19,7 @@ relativeMediaLinking = False
 def cleanup(input):
     def quickreplace(a, b):
         nonlocal input
-        input = input.replace(a, b)
+        input = input and input.replace(a, b)
 
     quickreplace("\.", ".")
     quickreplace("\)", ")")
@@ -71,84 +72,91 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
 
     yesterday = datetime.now().strftime('%Y-%m-%d')
 
-        text = entry["text"]
+    for index,entry in enumerate(data['entries']):
+
+        text = entry.get('text')
 
         # 2020-01-31T09:44:02Z => 2020.01.31 09-44
         # date = entry['creationDate'][:-4].replace("-", ".").replace(":", "-").replace("T", " ")
-        myTimezone = timezone(entry['timeZone'].replace("\\", ""))
+        myTimezone = timezone(entry['timeZone'].replace("\\", "").replace("GMT-1000","America/Anchorage"))
         myDate = datetime.strptime(entry['creationDate'],'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone)
         date = myDate.strftime('%Y-%m-%d %H-%M-%S')
+        addIndex = False
         if myDate.strftime('%Y-%m-%d') == yesterday:
-            print("Duplicated date:",yesterday)
+            print("Duplicated date:",yesterday, index)
+            addIndex = True
         yesterday = myDate.strftime('%Y-%m-%d')
 
         # If first line starts with "# " — treat it as entry title
-        if text.split("\n")[0][:2] == "# ":
+        if text and text.split("\n")[0][:2] == "# ":
             title = text.split("\n")[0].replace("# ", "").replace("#", "")
             text = text[text.find("\n")+2:]
         else:
             title = ""
 
         # Process all "dayone-moments"(photos and audios)
-        splitted = text.split("\n")
-        filtered = fnmatch.filter(splitted, "![](dayone-moment:*)")
+        splitted = text and text.split("\n")
+        filtered = splitted and fnmatch.filter(splitted, "![](dayone-moment:*)")
 
-        for moment in filtered:
-            # ![](dayone-moment:\/\/F7EEC3394BC0455FA513D9CAA0557C7E) => F7EEC3394BC0455FA513D9CAA0557C7E) = > F7EEC3394BC0455FA513D9CAA0557C7E
-            momentIdentifier = moment.split("/")[-1]
-            momentIdentifier = momentIdentifier[:-1]
+        if filtered:
+            for moment in filtered:
+                # ![](dayone-moment:\/\/F7EEC3394BC0455FA513D9CAA0557C7E) => F7EEC3394BC0455FA513D9CAA0557C7E) = > F7EEC3394BC0455FA513D9CAA0557C7E
+                momentIdentifier = moment.split("/")[-1]
+                momentIdentifier = momentIdentifier[:-1]
 
-            # Iterate over all media attached to entry and find filename and format of the right one
+                # Iterate over all media attached to entry and find filename and format of the right one
 
-            if "audio" in moment:
-                momentIn = entry["audios"]
-                folder = "audios"
-            elif "video" in moment:
-                momentIn = entry["videos"]
-                folder = "videos"
-            elif "pdfAttachment" in moment:
-                momentIn = entry["pdfAttachments"]
-                folder = "pdfs"
-            else:
-                momentIn = entry["photos"]
-                folder = "photos"
-            for momentItem in momentIn:
-                if momentIdentifier == momentItem["identifier"]:
-                    if "type" in momentItem:
-                        momentFormat = momentItem["type"]
-                    else:
-                        momentFormat = momentItem["format"]
-                        # For some reason "format" is codec not container — "aac" corresponds to "m4a" files. This is a stupid fix but still.
-                        if momentFormat == "aac":
-                            momentFormat = "m4a"
+                if "audio" in moment:
+                    momentIn = entry["audios"]
+                    folder = "audios"
+                elif "video" in moment:
+                    momentIn = entry.get("videos")
+                    folder = "videos"
+                elif "pdfAttachment" in moment:
+                    momentIn = entry["pdfAttachments"]
+                    folder = "pdfs"
+                else:
+                    momentIn = entry["photos"]
+                    folder = "photos"
+                if isinstance(momentIn, Iterable):
+                    for momentItem in momentIn:
+                        if momentIdentifier == momentItem["identifier"]:
+                            if "type" in momentItem:
+                                momentFormat = momentItem["type"]
+                            else:
+                                momentFormat = momentItem.get("format")
+                                # For some reason "format" is codec not container — "aac" corresponds to "m4a" files. This is a stupid fix but still.
+                                if momentFormat and momentFormat == "aac":
+                                    momentFormat = "m4a"
 
-                    # Jpegs have filenames. Audios don't
-                    if "filename" in momentItem:
-                        # Filename has file extension in it, we only need the name.
-                        newName = momentItem["filename"].split(".")[0]
-                    elif "md5" in momentItem:
-                        newName = momentItem["md5"]
-                    else:
-                        if 'date' in momentItem:
-                            # newName = momentItem['date'][:-4].replace("-", ".").replace(":", "-").replace("T", " ") + " " + momentIdentifier
-                            newName = datetime.strptime(momentItem['date'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone).strftime('%Y-%m-%d %H-%M-%S') + " " + momentIdentifier
-                        else:
-                            # newName = date + " id " + momentIdentifier
-                            newName = date + " " + momentIdentifier
+                            # Jpegs have filenames. Audios don't
+                            if "filename" in momentItem:
+                                # Filename has file extension in it, we only need the name.
+                                newName = momentItem["filename"].split(".")[0]
+                            elif "md5" in momentItem:
+                                newName = momentItem["md5"]
+                            else:
+                                if 'date' in momentItem:
+                                    # newName = momentItem['date'][:-4].replace("-", ".").replace(":", "-").replace("T", " ") + " " + momentIdentifier
+                                    newName = datetime.strptime(momentItem['date'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone).strftime('%Y-%m-%d %H-%M-%S') + " " + momentIdentifier
+                                else:
+                                    # newName = date + " id " + momentIdentifier
+                                    newName = date + " " + momentIdentifier
 
-                    momentFile = momentItem["md5"]
+                            momentFile = momentItem["md5"]
 
-            shutil.copy2(
-                f"temp/{tempsubfolder}/{folder}/{momentFile}.{momentFormat}",
-                f"./out/{subfolder}/{folder}/{newName}.{momentFormat}",
-            )
+                if os.path.exists("temp/{tempsubfolder}/{folder}/{momentFile}.{momentFormat}"):
+                    shutil.copy2(
+                        f"temp/{tempsubfolder}/{folder}/{momentFile}.{momentFormat}",
+                        f"./out/{subfolder}/{folder}/{newName}.{momentFormat}",
+                    )
 
-            if relativeMediaLinking:
-                text = text.replace(moment, f"![[{newName}.{momentFormat}]]")
-            else:
-                newName = newName.replace(' ','%20')
-                text = text.replace(moment, f"![](/{folder}/{newName}.{momentFormat})")
-            
+                if relativeMediaLinking:
+                    text = text and text.replace(moment, f"![[{newName}.{momentFormat}]]")
+                else:
+                    newName = newName.replace(' ','%20')
+                    text = text and text.replace(moment, f"![](/{folder}/{newName}.{momentFormat})")
+                
         rawtags = entry.get('tags')
         location = entry.get('location')
         
@@ -172,18 +180,24 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
             yamlString+="tags:\n- "+ "\n- ".join(filteredtags) + "\n"
 
         if location:
-            yamlString += "latitude: " + str(location['latitude']) + "\n"
-            yamlString += "longitude: " + str(location['longitude']) + "\n"
+            # yamlString += "latitude: " + str(location['latitude']) + "\n"
+            # yamlString += "longitude: " + str(location['longitude']) + "\n"
             # Support for Map View plugin
             yamlString += "location: [" + str(location['latitude']) + ", " + str(location['longitude']) + "]\n"
 
         yamlString+="---\n\n"
 
         # newfilename = date +" — " + title + ".md"
-        newfilename = date[:-9] + ".md"
+        newfilename = date[:-9]
+        if addIndex:
+            newfilename = newfilename + " (" + str(index) + ")"
+        newfilename = newfilename + ".md"
         newfile = io.open(folderpath  +  "/" + newfilename , mode="a", encoding="utf-8")
-        newfile.write(yamlString)
-        newfile.write(text)
+
+        if yamlString:
+            newfile.write(yamlString)
+        if text:
+            newfile.write(text)
 
 
 def ProcessZips(inpath, outpath):
