@@ -6,10 +6,13 @@ import zipfile
 import fnmatch
 import shutil
 import sys
+from pytz import timezone
+from datetime import datetime
+
 
 # If you use Obsidian.md you don't have to specifically point to media file as long as they are somewhere in "embedded media" folder.
 # If true link will be ![[file]] else ![](/folder/file)
-relativeMediaLinking = True
+relativeMediaLinking = False
 
 # Cleans up text from "\special character"
 def cleanup(input):
@@ -66,21 +69,23 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
     if not os.path.exists(folderpath + "/videos/"):
         os.makedirs(folderpath + "/videos/")
 
-    for entry in data["entries"]:
+    yesterday = datetime.now().strftime('%Y-%m-%d')
 
         text = entry["text"]
 
         # 2020-01-31T09:44:02Z => 2020.01.31 09-44
-        date = (
-            entry["creationDate"][:-4]
-            .replace("-", ".")
-            .replace(":", "-")
-            .replace("T", " ")
-        )
+        # date = entry['creationDate'][:-4].replace("-", ".").replace(":", "-").replace("T", " ")
+        myTimezone = timezone(entry['timeZone'].replace("\\", ""))
+        myDate = datetime.strptime(entry['creationDate'],'%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone)
+        date = myDate.strftime('%Y-%m-%d %H-%M-%S')
+        if myDate.strftime('%Y-%m-%d') == yesterday:
+            print("Duplicated date:",yesterday)
+        yesterday = myDate.strftime('%Y-%m-%d')
 
         # If first line starts with "# " — treat it as entry title
         if text.split("\n")[0][:2] == "# ":
             title = text.split("\n")[0].replace("# ", "").replace("#", "")
+            text = text[text.find("\n")+2:]
         else:
             title = ""
 
@@ -124,17 +129,12 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
                     elif "md5" in momentItem:
                         newName = momentItem["md5"]
                     else:
-                        if "date" in momentItem:
-                            newName = (
-                                momentItem["date"][:-4]
-                                .replace("-", ".")
-                                .replace(":", "-")
-                                .replace("T", " ")
-                                + " "
-                                + momentIdentifier
-                            )
+                        if 'date' in momentItem:
+                            # newName = momentItem['date'][:-4].replace("-", ".").replace(":", "-").replace("T", " ") + " " + momentIdentifier
+                            newName = datetime.strptime(momentItem['date'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone).strftime('%Y-%m-%d %H-%M-%S') + " " + momentIdentifier
                         else:
-                            newName = date + " id " + momentIdentifier
+                            # newName = date + " id " + momentIdentifier
+                            newName = date + " " + momentIdentifier
 
                     momentFile = momentItem["md5"]
 
@@ -146,30 +146,41 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
             if relativeMediaLinking:
                 text = text.replace(moment, f"![[{newName}.{momentFormat}]]")
             else:
+                newName = newName.replace(' ','%20')
                 text = text.replace(moment, f"![](/{folder}/{newName}.{momentFormat})")
-
-        rawtags = entry.get("tags")
-
-        writetags = False
+            
+        rawtags = entry.get('tags')
+        location = entry.get('location')
+        
         if rawtags:
             # We only need to append tags that aren't set in text
             filteredtags = []
             for tag in rawtags:
                 if "#" + tag not in text:
                     filteredtags.append(tag.replace(" ", ""))
-
-            if len(filteredtags) > 0:
-                tagsString = "#" + " #".join(filteredtags) + "\n"
-                writetags = True
+                else:
+                    print('This tag was ignored as it was in text: ',tag)
 
         text = cleanup(text)
         title = cleanup(title)
         title = cleanFilename(title)
 
-        newfilename = date + " — " + title + ".md"
-        newfile = io.open(folderpath + "/" + newfilename, mode="a", encoding="utf-8")
-        if writetags:
-            newfile.write(tagsString)
+        yamlString = "---\n"+"title: "+title+"\n"
+        yamlString += "date: " + datetime.strptime(entry['creationDate'], '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone('UTC')).astimezone(myTimezone).strftime('%Y-%m-%d %H:%M:%S') + "\n"
+        if len(filteredtags)>0:
+            # add metadata for tags
+            yamlString+="tags:\n- "+ "\n- ".join(filteredtags) + "\n"
+
+        if location:
+            yamlString += "latitude: " + str(location['latitude']) + "\n"
+            yamlString += "longitude: " + str(location['longitude']) + "\n"
+
+        yamlString+="---\n\n"
+
+        # newfilename = date +" — " + title + ".md"
+        newfilename = date[:-9] + ".md"
+        newfile = io.open(folderpath  +  "/" + newfilename , mode="a", encoding="utf-8")
+        newfile.write(yamlString)
         newfile.write(text)
 
 
