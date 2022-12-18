@@ -174,6 +174,8 @@ def processJson(readFrom, subfolder, tempsubfolder, outpath):
         if location:
             yamlString += "latitude: " + str(location['latitude']) + "\n"
             yamlString += "longitude: " + str(location['longitude']) + "\n"
+            # Support for Map View plugin
+            yamlString += "location: [" + str(location['latitude']) + ", " + str(location['longitude']) + "]\n"
 
         yamlString+="---\n\n"
 
